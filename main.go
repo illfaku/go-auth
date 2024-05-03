@@ -2,8 +2,9 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
+	"encoding/hex"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -37,21 +38,22 @@ func main() {
 }
 
 func addRoutes(r *graceful.Graceful) {
+	secret, err := hex.DecodeString(os.Getenv("JWS_SECRET"))
+	if err != nil {
+		panic(err)
+	}
+	jws := jws.New(jwt.SigningMethodHS256, secret)
+
 	db := newDb()
 	accounts := store.NewAccountStore(db.Collection("accounts"))
 	refreshTokens := store.NewRefreshTokenStore(db.Collection("refresh_tokens"))
 
-	secret := make([]byte, 16)
-	if _, err := rand.Read(secret); err != nil {
-		panic(err)
-	}
-	jws := jws.New(jwt.SigningMethodHS256, secret)
-	tokens := NewTokenAuth(accounts, refreshTokens, jws)
+	auth := NewTokenAuth(accounts, refreshTokens, jws)
 
 	r.POST("/register", func(c *gin.Context) {
 		user := c.PostForm("username")
 		pass := c.PostForm("password")
-		id, err := accounts.CreateLocal(c.Request.Context(), model.Admin, user, pass)
+		id, err := accounts.CreateLocal(c.Request.Context(), model.Client, user, pass)
 		if err != nil {
 			fail(c, http.StatusBadRequest, err.Error())
 			return
@@ -67,12 +69,12 @@ func addRoutes(r *graceful.Graceful) {
 			fail(c, http.StatusUnauthorized, "username or password is invalid")
 			return
 		}
-		c.JSON(http.StatusOK, tokens.MakeTokenPair(c.Request.Context(), account))
+		c.JSON(http.StatusOK, auth.MakeTokenPair(c.Request.Context(), account))
 	})
 
 	r.POST("/refresh", func(c *gin.Context) {
 		token := c.PostForm("refresh_token")
-		result, err := tokens.RefreshTokenPair(c.Request.Context(), token)
+		result, err := auth.RefreshTokenPair(c.Request.Context(), token)
 		if err != nil {
 			fail(c, http.StatusUnauthorized, err.Error())
 			return
@@ -111,10 +113,9 @@ func newDb() *mongo.Database {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(os.Getenv("MONGODB_CONNECTION_STRING")))
 	if err != nil {
 		panic(err)
 	}
-
 	return client.Database("main")
 }
