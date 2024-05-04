@@ -1,9 +1,13 @@
-FROM alpine
+FROM golang:1.22.2
 
-LABEL org.opencontainers.image.source https://github.com/illfaku/go-auth
+RUN mkdir /app
 
-COPY app .
+COPY . /app
+
+WORKDIR /app
+
+RUN go build -o server .
 
 EXPOSE 80
 
-ENTRYPOINT ["/app"]
+ENTRYPOINT ["/app/server"]
