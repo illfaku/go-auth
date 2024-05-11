@@ -10,6 +10,7 @@ type AccountData struct {
 	Kind  AccountKind
 	Local LocalAccountData `bson:",omitempty"`
 	Vk    VkAccountData    `bson:",omitempty"`
+	Chat  ChatData         `bson:",omitempty"`
 }
 
 type AccountKind string
@@ -34,4 +35,12 @@ type VkAccountData struct {
 
 func (d VkAccountData) IsZero() bool {
 	return d.UserId == ""
+}
+
+type ChatData struct {
+	Uid string
+}
+
+func (d ChatData) IsZero() bool {
+	return d.Uid == ""
 }
