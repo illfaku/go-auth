@@ -15,6 +15,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/illfaku/go-auth/model"
 	"github.com/illfaku/go-auth/store"
+	"github.com/illfaku/go-auth/tinode"
+	"github.com/illfaku/go-auth/token"
 	"github.com/illfaku/go-jws"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -48,52 +50,34 @@ func addRoutes(r *graceful.Graceful) {
 	accounts := store.NewAccountStore(db.Collection("accounts"))
 	refreshTokens := store.NewRefreshTokenStore(db.Collection("refresh_tokens"))
 
-	auth := NewTokenAuth(accounts, refreshTokens, jws)
-
 	r.POST("/register", func(c *gin.Context) {
 		user := c.PostForm("username")
 		pass := c.PostForm("password")
-		id, err := accounts.CreateLocal(c.Request.Context(), model.Client, user, pass)
+		_, err := accounts.CreateLocal(c.Request.Context(), model.Client, user, pass)
 		if err != nil {
-			fail(c, http.StatusBadRequest, err.Error())
+			c.JSON(model.Fail(http.StatusBadRequest, err.Error()))
 			return
 		}
-		c.String(http.StatusOK, id)
+		c.JSON(http.StatusOK, struct{}{})
 	})
 
-	r.POST("/login", func(c *gin.Context) {
-		user := c.PostForm("username")
-		pass := c.PostForm("password")
-		account := accounts.FindLocal(c.Request.Context(), user, pass)
-		if account == nil {
-			fail(c, http.StatusUnauthorized, "username or password is invalid")
-			return
-		}
-		c.JSON(http.StatusOK, auth.MakeTokenPair(c.Request.Context(), account))
-	})
+	r.POST("/login", token.Login(accounts, refreshTokens, jws))
+	r.POST("/refresh", token.Refresh(accounts, refreshTokens, jws))
 
-	r.POST("/refresh", func(c *gin.Context) {
-		token := c.PostForm("refresh_token")
-		result, err := auth.RefreshTokenPair(c.Request.Context(), token)
-		if err != nil {
-			fail(c, http.StatusUnauthorized, err.Error())
-			return
-		}
-		c.JSON(http.StatusOK, result)
-	})
+	r.POST("/tinode", tinode.Handle(accounts, jws))
 
 	test := r.Group("/test")
 	test.Use(func(c *gin.Context) {
 		header := strings.Split(c.GetHeader("Authorization"), "Bearer ")
 		if len(header) < 2 {
-			fail(c, http.StatusUnauthorized, "no Bearer token in Authorization header")
+			c.JSON(model.Fail(http.StatusUnauthorized, "no Bearer token in Authorization header"))
 			c.Abort()
 			return
 		}
-		claims := new(AccessClaims)
+		claims := new(model.AccessClaims)
 		err := jws.Verify(header[1], claims)
 		if err != nil {
-			fail(c, http.StatusUnauthorized, err.Error())
+			c.JSON(model.Fail(http.StatusUnauthorized, err.Error()))
 			c.Abort()
 			return
 		}
@@ -103,10 +87,6 @@ func addRoutes(r *graceful.Graceful) {
 	test.GET("/id", func(c *gin.Context) {
 		c.String(http.StatusOK, c.GetString("id"))
 	})
-}
-
-func fail(c *gin.Context, code int, message string) {
-	c.JSON(code, gin.H{"code": code, "message": message})
 }
 
 func newDb() *mongo.Database {

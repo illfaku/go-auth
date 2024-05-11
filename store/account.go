@@ -19,10 +19,7 @@ func NewAccountStore(collection *mongo.Collection) *AccountStore {
 
 func (accounts *AccountStore) Get(ctx context.Context, id string) *model.Account {
 	document := accounts.store.Get(ctx, id)
-	if document == nil {
-		return nil
-	}
-	return &model.Account{Id: document.Key, AccountData: document.Value}
+	return convertAccount(document)
 }
 
 func (accounts *AccountStore) CreateLocal(
@@ -47,6 +44,25 @@ func (accounts *AccountStore) FindLocal(ctx context.Context, user string, pass s
 	filter := mongostore.Filter{"value.kind": model.LocalAccount, "value.local.username": user}
 	document := accounts.store.Find(ctx, filter)
 	if document == nil || bcrypt.CompareHashAndPassword(document.Value.Local.Password, []byte(pass)) != nil {
+		return nil
+	}
+	return convertAccount(document)
+}
+
+func (accounts *AccountStore) LinkChat(ctx context.Context, id string, uid string) *model.Account {
+	document := accounts.store.Update(ctx, id,
+		func(value *model.AccountData) (modified *model.AccountData, persist bool) {
+			if value == nil {
+				return
+			}
+			value.Chat.Uid = uid
+			return value, true
+		})
+	return convertAccount(document)
+}
+
+func convertAccount(document *mongostore.Document[model.AccountData]) *model.Account {
+	if document == nil {
 		return nil
 	}
 	return &model.Account{Id: document.Key, AccountData: document.Value}
