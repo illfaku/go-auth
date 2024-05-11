@@ -26,9 +26,12 @@ const (
 
 func Login(accountStore *store.AccountStore, refreshStore *store.RefreshTokenStore, jws *jws.Jws) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		user := c.PostForm("username")
-		pass := c.PostForm("password")
-		account := accountStore.FindLocal(c.Request.Context(), user, pass)
+		creds := new(model.Creds)
+		if err := c.ShouldBindJSON(creds); err != nil {
+			c.JSON(model.Fail(http.StatusBadRequest, err.Error()))
+			return
+		}
+		account := accountStore.FindLocal(c.Request.Context(), creds.Username, creds.Password)
 		if account == nil {
 			c.JSON(model.Fail(http.StatusUnauthorized, "username or password is invalid"))
 			return

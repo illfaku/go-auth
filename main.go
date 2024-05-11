@@ -51,9 +51,12 @@ func addRoutes(r *graceful.Graceful) {
 	refreshTokens := store.NewRefreshTokenStore(db.Collection("refresh_tokens"))
 
 	r.POST("/register", func(c *gin.Context) {
-		user := c.PostForm("username")
-		pass := c.PostForm("password")
-		_, err := accounts.CreateLocal(c.Request.Context(), model.Client, user, pass)
+		creds := new(model.Creds)
+		if err := c.ShouldBindJSON(creds); err != nil {
+			c.JSON(model.Fail(http.StatusBadRequest, err.Error()))
+			return
+		}
+		_, err := accounts.CreateLocal(c.Request.Context(), model.Client, creds.Username, creds.Password)
 		if err != nil {
 			c.JSON(model.Fail(http.StatusBadRequest, err.Error()))
 			return
